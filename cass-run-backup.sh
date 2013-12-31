@@ -1,6 +1,6 @@
 #!/bin/bash
 CASSANDRA_DATA_DIR="/var/lib/cassandra/data"
-#exit 0
+TAR_LOCAL_DESTINATION_DIR="/var/lib/cassandra/data"
 
 #$1 dir to escape
 function escapeDir(){
@@ -14,17 +14,29 @@ function getDestinationDirectoryName(){
 	echo $(echo $(dirname $1) | sed -e "s/\/$(escapeDir $3)$//g" | sed -e "s/$CASSANDRA_DATA_DIR_ESCAPED/$(escapeDir $2)/")
 }
 
+function deleteIncrementalBackupFiles(){
+	echo "Deleting Incremental Backup files"
+	for f in $(find $CASSANDRA_DATA_DIR | grep "/backups/")
+	do
+		echo "deleting $f"
+		rm -rf "$f"
+	done
+}
+
+
 #$1 = output directory name (will be placed in the data dir)
 function compileIncrementalBackupFiles(){
 	echo "Creating Incremental Backup in $1..."
+	#flush the node to make sure the incrementals are up to date
+	nodetool flush
 	if [ -d $1 ]; then
 		rm -rf $1
 	fi
 	for f in $(find $CASSANDRA_DATA_DIR | grep "/backups/")
 	do
-		echo "copying $f into $(getDestinationDirectoryName $f $1 "backups")"
+		echo "linking $f into $(getDestinationDirectoryName $f $1 "backups")"
 		mkdir -p "$(getDestinationDirectoryName $f $1 "backups")"
-		cp $f "$(getDestinationDirectoryName $f $1 "backups")"
+		ln $f "$(getDestinationDirectoryName $f $1 "backups")"
 	done
 }
 
@@ -36,9 +48,9 @@ function compileSnapshotBackupFiles(){
 	fi
 	for f in $(find $CASSANDRA_DATA_DIR | grep "/snapshots/$2/")
 	do
-		echo "copying $f into $(getDestinationDirectoryName $f $1 "snapshots/$2")"
+		echo "linking $f into $(getDestinationDirectoryName $f $1 "snapshots/$2")"
 		mkdir -p "$(getDestinationDirectoryName $f $1 "snapshots/$2")"
-		cp $f "$(getDestinationDirectoryName $f $1 "snapshots/$2")"
+		ln $f "$(getDestinationDirectoryName $f $1 "snapshots/$2")"
 	done
 }
 
@@ -60,10 +72,12 @@ function createTaredSnapshotBackup(){
 	fi
 	#clear out any existing snapshots
 	nodetool clearsnapshot
+	#flush out everything we have to disk
+	nodetool flush
 	#compile the new snapshot and copy it out for taring
 	compileSnapshotBackupFiles "$1" "$(makeCassandraSnapshot)"
-	#TODO: DELETE the incremental files
-	#TODO TODO TODO TODO
+	#DELETE the incremental files
+	deleteIncrementalBackupFiles
 	#tar and feather the new snapshot
 	tarAndRemoveBackupFolder "$1"
 }
@@ -84,13 +98,24 @@ function makeDatedFileName(){
 }
 
 function completeSnapshotBackup(){
-	createTaredSnapshotBackup "/var/lib/cassandra/data/$(makeDatedFileName "snapshot")"
+	createTaredSnapshotBackup "$TAR_LOCAL_DESTINATION_DIR/$(makeDatedFileName "snapshot")"
 }
 
 function completeIncrementalBackup(){
-	createTaredIncrementalBackup "/var/lib/cassandra/data/$(makeDatedFileName "incremental")"
+	createTaredIncrementalBackup "$TAR_LOCAL_DESTINATION_DIR/$(makeDatedFileName "incremental")"
 }
 
-completeSnapshotBackup
-completeIncrementalBackup
+if [ "$1" == "incremental" ]; then
+	completeIncrementalBackup
+	exit 0
+fi
+
+if [ "$1" == "snapshot" ]; then
+	completeSnapshotBackup
+	exit 0
+fi
+
+echo "usage: cass-run-backup.sh [incremental | snapshot]"
+exit 1
+
 
