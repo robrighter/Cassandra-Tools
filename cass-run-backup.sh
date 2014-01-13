@@ -14,6 +14,11 @@ function getDestinationDirectoryName(){
 	echo $(echo $(dirname $1) | sed -e "s/\/$(escapeDir $3)$//g" | sed -e "s/$CASSANDRA_DATA_DIR_ESCAPED/$(escapeDir $2)/")
 }
 
+#$1 = existing-file, $2 = destination-folder, $3 = backup or snapshot folder
+function getDestinationFileName(){
+	echo $(echo $1 | sed -e "s/\/$(escapeDir $3)//g" | sed -e "s/$CASSANDRA_DATA_DIR_ESCAPED/$(escapeDir $2)/")
+}
+
 function deleteIncrementalBackupFiles(){
 	echo "Deleting Incremental Backup files"
 	for f in $(find $CASSANDRA_DATA_DIR | grep "/backups/")
@@ -32,11 +37,15 @@ function compileIncrementalBackupFiles(){
 	if [ -d $1 ]; then
 		rm -rf $1
 	fi
-	for f in $(find $CASSANDRA_DATA_DIR | grep "/backups/")
+	for f in $(find $CASSANDRA_DATA_DIR | grep -v OpsCenter | grep "/backups/")
 	do
-		echo "linking $f into $(getDestinationDirectoryName $f $1 "backups")"
+		#echo "1= $f"
+		#echo "2= $1"
+		#echo "3= backups"
+		#echo "Destination filename= $(getDestinationFileName $f $1 "backups")"
+		echo "linking $f into $(getDestinationFileName $f $1 "backups")"
 		mkdir -p "$(getDestinationDirectoryName $f $1 "backups")"
-		ln $f "$(getDestinationDirectoryName $f $1 "backups")"
+		ln $f "$(getDestinationFileName $f $1 "backups")"
 	done
 }
 
@@ -46,11 +55,11 @@ function compileSnapshotBackupFiles(){
 	if [ -d $1 ]; then
 		rm -rf $1
 	fi
-	for f in $(find $CASSANDRA_DATA_DIR | grep "/snapshots/$2/")
+	for f in $(find $CASSANDRA_DATA_DIR | grep -v OpsCenter | grep "/snapshots/$2/")
 	do
-		echo "linking $f into $(getDestinationDirectoryName $f $1 "snapshots/$2")"
+		echo "linking $f into $(getDestinationFileName $f $1 "snapshots/$2")"
 		mkdir -p "$(getDestinationDirectoryName $f $1 "snapshots/$2")"
-		ln $f "$(getDestinationDirectoryName $f $1 "snapshots/$2")"
+		ln $f "$(getDestinationFileName $f $1 "snapshots/$2")"
 	done
 }
 
